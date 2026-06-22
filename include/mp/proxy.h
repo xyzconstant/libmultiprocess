@@ -105,10 +105,10 @@ public:
     // run custom code on the server automatically when a ProxyClient client is
     // constructed. The only current use is adding a construct method to Init
     // interfaces that is called automatically on construction, so client and
-    // server exchange ThreadMap references and set Connection::m_thread_map
+    // server exchange Runtime references and set Connection::m_runtime
     // values as soon as the Init client is created.
     //
-    //     construct @0 (threadMap: Proxy.ThreadMap) -> (threadMap: Proxy.ThreadMap);
+    //     construct @0 (runtime: Proxy.Runtime) -> (runtime: Proxy.Runtime);
     //
     // But construct() is not necessary for this, thread maps could be passed
     // through a normal method that is just called explicitly rather than

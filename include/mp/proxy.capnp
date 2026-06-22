@@ -41,14 +41,16 @@ annotation skip(field): Void;
 # Synonym for count(0).
 
 interface Runtime $count(0) {
-    # Interface letting clients control which thread a method call should
-    # execute on. Clients create and name threads and pass the thread handle as
-    # a call parameter.
+    # Interface allowing clients dispatch worker threads on the serving process.
+
     makeThread @0 (name :Text) -> (result :Thread);
+    # Creates a worker thread on the serving process and returns a handle that can be
+    # used in subsequent calls as part of the `Context` parameter.
+
+    makePool @1 (count :UInt32) -> ();
     # Pre-allocate a pool of server threads for implicit dispatch. When a
     # request arrives with no context.thread set, the server dispatches it
     # through this pool via a shared work queue.
-    makePool @1 (count :UInt32) -> ();
 }
 
 interface Thread {

@@ -341,7 +341,7 @@ public:
     //! External context pointer.
     void* m_context;
 
-    //! Hook called when ProxyServer<ThreadMap>::makeThread() is called.
+    //! Hook called when ProxyServer<Runtime>::makeThread() is called.
     std::function<void()> testing_hook_makethread;
 
     //! Hook called on the worker thread inside makeThread(), after the thread
@@ -469,12 +469,12 @@ public:
     ::capnp::TwoPartyVatNetwork m_network;
     std::optional<::capnp::RpcSystem<::capnp::rpc::twoparty::VatId>> m_rpc_system;
 
-    // ThreadMap interface client, used to create a remote server thread when an
+    // Runtime interface client, used to create a remote server thread when an
     // client IPC call is being made for the first time from a new thread.
     Runtime::Client m_runtime{nullptr};
 
     //! Collection of server-side IPC worker threads (ProxyServer<Thread> objects previously returned by
-    //! ThreadMap.makeThread) used to service requests to clients.
+    //! Runtime.makeThread) used to service requests to clients.
     ::capnp::CapabilityServerSet<Thread> m_threads;
 
     //! A thread created by makePool with associated pending work queue. Vector is filled once by makePool() and never resized.
@@ -681,9 +681,9 @@ std::tuple<ConnThread, bool> SetThread(GuardedRef<ConnThreads> threads, Connecti
 //! it's a thread local struct, each ThreadContext instance is initialized by
 //! the thread that owns it.
 //!
-//! ThreadContext is used for any client threads created externally which make
-//! IPC calls, and for server threads created by
-//! ProxyServer<ThreadMap>::makeThread() which execute IPC calls for clients.
+//! ThreadContext is used for externally created client threads that make IPC calls,
+//! as well as for server threads created by ProxyServer<Runtime>::makeThread() or 
+//! ProxyServer<Runtime>::makePool() to handle IPC calls for clients.
 //!
 //! In both cases, the struct holds information like the thread name, and a
 //! Waiter object where the EventLoop can post incoming IPC requests to execute
@@ -696,7 +696,7 @@ struct ThreadContext
 
     //! Waiter object used to allow remote clients to execute code on this
     //! thread. For server threads created by
-    //! ProxyServer<ThreadMap>::makeThread(), this is initialized in that
+    //! ProxyServer<Runtime>::makeThread(), this is initialized in that
     //! function. Otherwise, for client threads created externally, this is
     //! initialized the first time the thread tries to make an IPC call. Having
     //! a waiter is necessary for threads making IPC calls in case a server they

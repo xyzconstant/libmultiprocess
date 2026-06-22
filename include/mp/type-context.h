@@ -30,7 +30,7 @@ void CustomBuildField(TypeList<>,
         GuardedRef{thread_context.waiter->m_mutex, thread_context.callback_threads}, &connection,
         [&] { return connection.m_threads.add(kj::heap<ProxyServer<Thread>>(connection, thread_context, std::thread{})); })};
 
-    // Call remote ThreadMap.makeThread function so server will create a
+    // Call remote Runtime.makeThread function so server will create a
     // dedicated worker thread to run function calls from this thread. Store the
     // Thread::Client reference it returns in the request_threads map.
     auto make_request_thread{[&]{
@@ -252,17 +252,17 @@ auto PassField(Priority<1>, TypeList<>, ServerContext& server_context, const Fn&
                 // Called null capability" here, it probably means your Init class
                 // is missing a declaration like:
                 //
-                //   construct @0 (threadMap: Proxy.ThreadMap) -> (threadMap :Proxy.ThreadMap);
+                //   construct @0 (runtime: Proxy.Runtime) -> (runtime :Proxy.Runtime);
                 //
-                // which passes a ThreadMap reference from the client to the server,
+                // which passes a Runtime reference from the client to the server,
                 // allowing the server to create threads to run IPC calls on the
-                // client, and also returns a ThreadMap reference from the server to
+                // client, and also returns a Runtime reference from the server to
                 // the client, allowing the client to create threads on the server.
-                // (Typically the latter ThreadMap is used more often because there
+                // (Typically the latter Runtime is used more often because there
                 // are more client-to-server calls.)
                 //
                 // If the other side of the connection did not previously get a
-                // ThreadMap reference from this side of the connection, when the
+                // Runtime reference from this side of the connection, when the
                 // other side calls `m_thread_map.makeThreadRequest()` in
                 // `BuildField` above, `m_thread_map` will be null, but that call
                 // will not fail immediately due to Cap'n Proto's request pipelining

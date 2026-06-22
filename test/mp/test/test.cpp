@@ -355,7 +355,7 @@ KJ_TEST("Worker thread destroyed before it is initialized")
     // worker thread is destroyed before it starts waiting for work.
     //
     // The test uses the `makethread` hook to trigger a disconnect as soon as
-    // ProxyServer<ThreadMap>::makeThread is called, so without the bugfix,
+    // ProxyServer<Runtime>::makeThread is called, so without the bugfix,
     // ProxyServer<Thread>::~ProxyServer would run and destroy the waiter before
     // the worker thread started waiting, causing a SIGSEGV when it did start.
     TestSetup setup;
@@ -531,7 +531,7 @@ KJ_TEST("Call async IPC method dispatched to pool thread")
     TestSetup setup;
     ProxyClient<messages::FooInterface>* foo = setup.client.get();
 
-    // Set up the thread map exchange so the client has the server's ThreadMap,
+    // Set up the thread map exchange so the client has the server's Runtime,
     // then call makePool to pre-allocate two server threads.
     foo->initRuntime();
     setup.server->m_impl->m_int_fn = [](int n) { return n * 2; };

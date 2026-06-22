@@ -40,7 +40,7 @@ void CustomBuildField(TypeList<>,
         // all if the current thread is a request thread created for a different
         // IPC client, because in that case PassField code (below) will have set
         // request_thread to point to the calling thread.
-        auto request = connection.m_thread_map.makeThreadRequest();
+        auto request = connection.m_runtime.makeThreadRequest();
         request.setName(thread_context.thread_name);
         return request.send().getResult(); // Nonblocking due to capnp request pipelining.
     }};
@@ -279,7 +279,7 @@ auto PassField(Priority<1>, TypeList<>, ServerContext& server_context, const Fn&
                 // exception will also be logged in serverInvoke, but this logging
                 // may provide extra context that could be helpful for debugging.
                 MP_LOG(loop, Log::Info)
-                    << "IPC server error request #" << req << " CapabilityServerSet<Thread>::getLocalServer call failed, did you forget to provide a ThreadMap to the client prior to this IPC call?";
+                    << "IPC server error request #" << req << " CapabilityServerSet<Thread>::getLocalServer call failed, did you forget to provide a Runtime object to the client prior to this IPC call?";
                 return kj::mv(e);
             });
         // Use connection m_canceler object to cancel the result promise if the

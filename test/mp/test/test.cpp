@@ -198,7 +198,7 @@ KJ_TEST("Call FooInterface methods")
         int m_expect, m_ret;
     };
 
-    foo->initThreadMap();
+    foo->initRuntime();
     Callback callback(1, 2);
     KJ_EXPECT(foo->callback(callback, 1) == 2);
     KJ_EXPECT(foo->callbackUnique(std::make_unique<Callback>(3, 4), 3) == 4);
@@ -325,7 +325,7 @@ KJ_TEST("Calling IPC method, disconnecting and blocking during the call")
     ProxyClient<messages::FooInterface>* foo = setup.client.get();
     KJ_EXPECT(foo->add(1, 2) == 3);
 
-    foo->initThreadMap();
+    foo->initRuntime();
     setup.server->m_impl->m_fn = [&] {
         EventLoopRef loop{*setup.server->m_context.loop};
         setup.client_disconnect();
@@ -360,7 +360,7 @@ KJ_TEST("Worker thread destroyed before it is initialized")
     // the worker thread started waiting, causing a SIGSEGV when it did start.
     TestSetup setup;
     ProxyClient<messages::FooInterface>* foo = setup.client.get();
-    foo->initThreadMap();
+    foo->initRuntime();
     setup.server->m_impl->m_fn = [] {};
 
     EventLoop& loop = *setup.server->m_context.connection->m_loop;
@@ -397,7 +397,7 @@ KJ_TEST("Calling async IPC method, with server disconnect racing the call")
     // calling call_context.getParams().
     TestSetup setup;
     ProxyClient<messages::FooInterface>* foo = setup.client.get();
-    foo->initThreadMap();
+    foo->initRuntime();
     setup.server->m_impl->m_fn = [] {};
 
     EventLoop& loop = *setup.server->m_context.connection->m_loop;
@@ -429,7 +429,7 @@ KJ_TEST("Calling async IPC method, with server disconnect after cleanup")
     // scope.
     TestSetup setup;
     ProxyClient<messages::FooInterface>* foo = setup.client.get();
-    foo->initThreadMap();
+    foo->initRuntime();
     setup.server->m_impl->m_fn = [] {};
 
     EventLoop& loop = *setup.server->m_context.connection->m_loop;
@@ -459,7 +459,7 @@ KJ_TEST("Destroying ProxyClient<> with destroy method after peer disconnect")
 
     TestSetup setup{/*client_owns_connection=*/false};
     ProxyClient<messages::FooInterface>* foo = setup.client.get();
-    foo->initThreadMap();
+    foo->initRuntime();
 
     class Callback : public FooCallback
     {
@@ -477,7 +477,7 @@ KJ_TEST("Make simultaneous IPC calls on single remote thread")
     ProxyClient<messages::FooInterface>* foo = setup.client.get();
     std::promise<void> signal;
 
-    foo->initThreadMap();
+    foo->initRuntime();
     // Use callFnAsync() to get the client to set up the request_thread
     // that will be used for the test.
     setup.server->m_impl->m_fn = [&] {};
@@ -533,14 +533,14 @@ KJ_TEST("Call async IPC method dispatched to pool thread")
 
     // Set up the thread map exchange so the client has the server's ThreadMap,
     // then call makePool to pre-allocate two server threads.
-    foo->initThreadMap();
+    foo->initRuntime();
     setup.server->m_impl->m_int_fn = [](int n) { return n * 2; };
 
     ThreadContext& tc{g_thread_context};
     std::atomic<size_t> running{3};
     std::promise<void> pool_ready;
     foo->m_context.loop->sync([&] {
-        auto pool_req = foo->m_context.connection->m_thread_map.makePoolRequest();
+        auto pool_req = foo->m_context.connection->m_runtime.makePoolRequest();
         pool_req.setCount(2);
         foo->m_context.loop->m_task_set->add(
             pool_req.send().then([&](auto&&) { pool_ready.set_value(); }));

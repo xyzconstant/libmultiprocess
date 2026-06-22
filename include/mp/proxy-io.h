@@ -471,7 +471,7 @@ public:
 
     // ThreadMap interface client, used to create a remote server thread when an
     // client IPC call is being made for the first time from a new thread.
-    ThreadMap::Client m_thread_map{nullptr};
+    Runtime::Client m_runtime{nullptr};
 
     //! Collection of server-side IPC worker threads (ProxyServer<Thread> objects previously returned by
     //! ThreadMap.makeThread) used to service requests to clients.

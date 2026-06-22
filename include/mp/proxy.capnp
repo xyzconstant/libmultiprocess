@@ -40,7 +40,7 @@ annotation name(field, method): Text;
 annotation skip(field): Void;
 # Synonym for count(0).
 
-interface ThreadMap $count(0) {
+interface Runtime $count(0) {
     # Interface letting clients control which thread a method call should
     # execute on. Clients create and name threads and pass the thread handle as
     # a call parameter.

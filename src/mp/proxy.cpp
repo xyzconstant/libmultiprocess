@@ -7,7 +7,7 @@
 #include <mp/proxy-io.h>
 #include <mp/proxy-types.h>
 #include <mp/proxy.capnp.h>
-#include <mp/type-threadmap.h>
+#include <mp/type-runtime.h>
 #include <mp/util.h>
 
 #include <atomic>
@@ -415,9 +415,9 @@ kj::Promise<void> ProxyServer<Thread>::getName(GetNameContext context)
     return kj::READY_NOW;
 }
 
-ProxyServer<ThreadMap>::ProxyServer(Connection& connection) : m_connection(connection) {}
+ProxyServer<Runtime>::ProxyServer(Connection& connection) : m_connection(connection) {}
 
-kj::Promise<void> ProxyServer<ThreadMap>::makePool(MakePoolContext context)
+kj::Promise<void> ProxyServer<Runtime>::makePool(MakePoolContext context)
 {
     if (!m_connection.m_thread_pool.empty()) {
         throw std::runtime_error("makePool called on connection with existing pool");
@@ -440,7 +440,7 @@ kj::Promise<void> ProxyServer<ThreadMap>::makePool(MakePoolContext context)
     return kj::READY_NOW;
 }
 
-kj::Promise<void> ProxyServer<ThreadMap>::makeThread(MakeThreadContext context)
+kj::Promise<void> ProxyServer<Runtime>::makeThread(MakeThreadContext context)
 {
     EventLoop& loop{*m_connection.m_loop};
     if (loop.testing_hook_makethread) loop.testing_hook_makethread();

@@ -13,6 +13,7 @@
 #include <capnp/common.h>
 #include <cstddef>
 #include <mp/test/foo.capnp.h>
+#include <mp/type-cancel.h>
 #include <mp/type-context.h>
 #include <mp/type-data.h>
 #include <mp/type-decay.h>

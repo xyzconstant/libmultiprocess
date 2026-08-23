@@ -88,6 +88,10 @@ public:
     int value() override { return m_value; }
     int m_value;
 };
+
+using CancelFn = std::function<void()>;
+using CancelArg = std::function<void(CancelFn)>;
+
 class FooImplementation
 {
 public:
@@ -126,8 +130,14 @@ public:
     void callFnAsync() { assert(m_fn); m_fn(); }
     int callIntFnAsync(int arg) { assert(m_int_fn); return m_int_fn(arg); }
     FooMessage callMessageAsync() { assert(m_fn); m_fn(); return {}; }
+    void callCancelFnAsync(CancelArg cancel)
+    {
+        assert(m_cancel_fn);
+        m_cancel_fn(std::move(cancel));
+    }
     std::function<void()> m_fn;
     std::function<int(int)> m_int_fn;
+    std::function<void(CancelArg)> m_cancel_fn;
 };
 
 } // namespace test

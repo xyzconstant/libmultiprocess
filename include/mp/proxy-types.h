@@ -785,7 +785,9 @@ void clientInvoke(ProxyClient& proxy_client, const GetRequest& get_request, Fiel
     std::exception_ptr exception;
     std::string kj_exception;
     bool done = false;
+    bool canceled = false;
     const char* disconnected = nullptr;
+    const auto cancel_state = std::make_shared<ClientCancelState>(*proxy_client.m_context.loop);
     proxy_client.m_context.loop->sync([&]() {
         if (!proxy_client.m_context.connection) {
             const Lock lock(thread_context.waiter->m_mutex);
@@ -806,7 +808,8 @@ void clientInvoke(ProxyClient& proxy_client, const GetRequest& get_request, Fiel
         MP_LOGPLAIN(*proxy_client.m_context.loop, Log::Trace)
             << "send data: " << LogEscape(request.toString(), proxy_client.m_context.loop->m_log_opts.max_chars);
 
-        proxy_client.m_context.loop->m_task_set->add(request.send().then(
+        auto request_canceler = kj::heap<RequestCanceler>(cancel_state);
+        proxy_client.m_context.loop->m_task_set->add(request_canceler->wrap(request.send()).then(
             [&](::capnp::Response<typename Request::Results>&& response) {
                 MP_LOGPLAIN(*proxy_client.m_context.loop, Log::Debug)
                     << "{" << thread_context.thread_name << "} IPC client recv "
@@ -824,7 +827,9 @@ void clientInvoke(ProxyClient& proxy_client, const GetRequest& get_request, Fiel
                 thread_context.waiter->m_cv.notify_all();
             },
             [&](const ::kj::Exception& e) {
-                if (e.getType() == ::kj::Exception::Type::DISCONNECTED) {
+                if (cancel_state->canceled()) {
+                    canceled = true;
+                } else if (e.getType() == ::kj::Exception::Type::DISCONNECTED) {
                     disconnected = "IPC client method call interrupted by disconnect.";
                 } else {
                     kj_exception = kj::str("kj::Exception: ", e).cStr();
@@ -834,12 +839,13 @@ void clientInvoke(ProxyClient& proxy_client, const GetRequest& get_request, Fiel
                 const Lock lock(thread_context.waiter->m_mutex);
                 done = true;
                 thread_context.waiter->m_cv.notify_all();
-            }));
+            }).attach(kj::mv(request_canceler)));
     });
 
     Lock lock(thread_context.waiter->m_mutex);
     thread_context.waiter->wait(lock, [&done]() { return done; });
     if (exception) std::rethrow_exception(exception);
+    if (canceled) throw InterruptException{"canceled"};
     if (!kj_exception.empty()) MP_LOGPLAIN(*proxy_client.m_context.loop, Log::Raise) << kj_exception;
     if (disconnected) MP_LOGPLAIN(*proxy_client.m_context.loop, Log::Raise) << disconnected;
 }

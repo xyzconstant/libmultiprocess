@@ -39,6 +39,7 @@ struct InvokeContext
 struct ClientInvokeContext : InvokeContext
 {
     ThreadContext& thread_context;
+    std::function<void(std::function<void()>)> cancel_receiver;
     ClientInvokeContext(Connection& conn, ThreadContext& thread_context)
         : InvokeContext{conn}, thread_context{thread_context}
     {
@@ -382,6 +383,66 @@ public:
     //! requiring a dedicated hook for each one.
     std::function<void(std::any)> testing_hook_misc;
 };
+
+//! Cancellation state of one IPC call, created by clientInvoke.
+class ClientCancelState
+{
+public:
+    explicit ClientCancelState(EventLoop& loop) : m_loop(loop) {}
+
+    //! Cancel the in-flight request, waking the blocked client thread.
+    //! Callable from any thread.
+    inline void cancel();
+
+    //! Whether cancel was called.
+    bool canceled()
+    {
+        const Lock lock{m_mutex};
+        return m_canceled;
+    }
+
+    //! Keeps the event loop alive while the caller holds the cancel
+    //! function.
+    EventLoopRef m_loop;
+    Mutex m_mutex;
+    bool m_canceled MP_GUARDED_BY(m_mutex){false};
+    //! Canceler of the request promise, owned by the RequestCanceler attached
+    //! to it. Null before the request is sent and after it completes.
+    kj::Canceler* m_canceler MP_GUARDED_BY(m_mutex){nullptr};
+};
+
+//! kj::Canceler wrapping a request promise. Attached to the promise so it
+//! is created and destroyed on the event loop thread, keeping
+//! ClientCancelState::m_canceler valid while the request is in flight.
+struct RequestCanceler : kj::Canceler
+{
+    explicit RequestCanceler(std::shared_ptr<ClientCancelState> state) : m_state(std::move(state))
+    {
+        const Lock lock{m_state->m_mutex};
+        m_state->m_canceler = this;
+    }
+    ~RequestCanceler()
+    {
+        const Lock lock{m_state->m_mutex};
+        m_state->m_canceler = nullptr;
+    }
+    std::shared_ptr<ClientCancelState> m_state;
+};
+
+void ClientCancelState::cancel()
+{
+    {
+        const Lock lock{m_mutex};
+        if (m_canceled) return;
+        m_canceled = true;
+        // Null canceler means the call already completed, so there is nothing to cancel.
+        if (!m_canceler) return;
+    }
+    m_loop->sync([&] {
+        const Lock lock{m_mutex};
+        if (m_canceler) m_canceler->cancel("canceled by client");
+    });
+}
 
 //! Single element task queue used to handle recursive capnp calls. (If the
 //! server makes a callback into the client in the middle of a request, while the client

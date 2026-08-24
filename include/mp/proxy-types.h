@@ -603,12 +603,15 @@ struct ServerCall
                     [&](RemoveCvRef<Extra>&... extra_args) -> decltype(auto) {
                         return ProxyServerMethodTraits<
                             typename decltype(server_context.call_context.getParams())::Reads
-                        >::invoke(server_context, std::forward<Args>(args)..., extra_args...);
+                        >::invoke(server_context, std::forward<Args>(args)..., std::move(extra_args)...);
                     },
                     extra);
             },
             [&] {
                 if (server_context.request_lock) server_context.request_lock->m_lock.lock();
+                // The method returned, so destroy the callback it registered
+                // through its cancellation argument, if any.
+                server_context.cancel_fn = nullptr;
                 // If the IPC request was canceled, throw InterruptException
                 // because there is no point continuing and trying to fill the
                 // call_context.getResults() struct. It's also important to stop
@@ -841,6 +844,10 @@ void clientInvoke(ProxyClient& proxy_client, const GetRequest& get_request, Fiel
                 thread_context.waiter->m_cv.notify_all();
             }).attach(kj::mv(request_canceler)));
     });
+
+    if (invoke_context && invoke_context->cancel_receiver) {
+        invoke_context->cancel_receiver([cancel_state] { cancel_state->cancel(); });
+    }
 
     Lock lock(thread_context.waiter->m_mutex);
     thread_context.waiter->wait(lock, [&done]() { return done; });

@@ -157,6 +157,7 @@ set(MP_PUBLIC_HEADERS
   include/mp/proxy.h
   include/mp/type-char.h
   include/mp/type-chrono.h
+  include/mp/type-cancel.h
   include/mp/type-context.h
   include/mp/type-data.h
   include/mp/type-decay.h

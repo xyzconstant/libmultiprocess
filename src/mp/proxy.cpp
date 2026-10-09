@@ -69,10 +69,7 @@ EventLoopRef::EventLoopRef(EventLoop& loop, Lock* lock) : m_loop(&loop), m_lock(
     m_loop->m_num_refs += 1;
 }
 
-// Due to the conditionals in this function, MP_NO_TSA is required to avoid
-// error "error: mutex 'loop_lock' is not held on every path through here
-// [-Wthread-safety-analysis]"
-void EventLoopRef::reset(bool relock) MP_NO_TSA
+void EventLoopRef::reset()
 {
     if (auto* loop{m_loop}) {
         m_loop = nullptr;
@@ -81,23 +78,8 @@ void EventLoopRef::reset(bool relock) MP_NO_TSA
         assert(loop->m_num_refs > 0);
         loop->m_num_refs -= 1;
         if (loop->done()) {
-            loop->m_cv.notify_all();
-            // Capture loop->m_post_writer pointer before releasing the lock.
-            // The pointer can't actually change before the write() call below,
-            // but copying it with the lock held instead of accessing it
-            // directly below prevents TSAN false positives because TSAN is
-            // unaware of socketpair write() synchronization and might falsely
-            // report the pointer being used in this thread and assigned in the
-            // other thread without synchronization between.
-            loop_lock->unlock();
-            // It safe to access post_writer here because the loop can't
-            // exit until this write takes place. See "Intentionally do not
-            // break..."  comment in EventLoop::loop
+            // resolve the promise waiting inside EventLoop::loop().
             loop->m_stop_promise_fulfiller_pair.fulfiller->fulfill();
-            // By default, do not try to relock `loop_lock` after writing,
-            // because the event loop could wake up and destroy itself and the
-            // mutex might no longer exist.
-            if (relock) loop_lock->lock();
         }
     }
 }
@@ -323,8 +305,6 @@ void EventLoop::startAsyncThread()
                     const std::function<void()> fn = std::move(m_async_fns->front());
                     m_async_fns->pop_front();
                     Unlock(lock, fn);
-                    // Important to relock because of the wait() call below.
-                    ref.reset(/*relock=*/true);
                     // Continue without waiting in case there are more async_fns
                     continue;
                 }

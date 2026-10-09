@@ -24,10 +24,10 @@
 #include <kj/debug.h>
 #include <kj/exception.h>
 #include <kj/function.h>
-#include <kj/io.h>
 #include <kj/memory.h>
 #include <kj/string.h>
 #include <cstdint>
+#include <cstring>
 #include <map>
 #include <memory>
 #include <optional>
@@ -89,13 +89,11 @@ void EventLoopRef::reset(bool relock) MP_NO_TSA
             // unaware of socketpair write() synchronization and might falsely
             // report the pointer being used in this thread and assigned in the
             // other thread without synchronization between.
-            kj::OutputStream* post_writer{loop->m_post_writer.get()};
             loop_lock->unlock();
-            char buffer = 0;
             // It safe to access post_writer here because the loop can't
             // exit until this write takes place. See "Intentionally do not
             // break..."  comment in EventLoop::loop
-            post_writer->write(&buffer, 1);
+            loop->m_stop_promise_fulfiller_pair.fulfiller->fulfill();
             // By default, do not try to relock `loop_lock` after writing,
             // because the event loop could wake up and destroy itself and the
             // mutex might no longer exist.
@@ -257,28 +255,17 @@ void EventLoop::addAsyncCleanup(std::function<void()> fn)
 EventLoop::EventLoop(const char* exe_name, LogOptions log_opts, void* context)
     : m_exe_name(exe_name),
       m_io_context(kj::setupAsyncIo()),
+      m_executor(kj::getCurrentThreadExecutor()),
+      m_stop_promise_fulfiller_pair(kj::newPromiseAndCrossThreadFulfiller<void>()),
       m_task_set(new kj::TaskSet(m_error_handler)),
       m_log_opts(std::move(log_opts)),
-      m_context(context)
-{
-    auto pipe = m_io_context.provider->newTwoWayPipe();
-    m_wait_stream = kj::mv(pipe.ends[0]);
-    m_post_stream = kj::mv(pipe.ends[1]);
-    KJ_IF_MAYBE(fd, m_post_stream->getFd()) {
-        m_post_writer = kj::heap<kj::FdOutputStream>(*fd);
-    } else {
-        throw std::logic_error("Could not get file descriptor for new pipe.");
-    }
-}
+      m_context(context) {}
 
 EventLoop::~EventLoop()
 {
     if (m_async_thread.joinable()) m_async_thread.join();
     const Lock lock(m_mutex);
-    KJ_ASSERT(m_sync_fn == nullptr);
     KJ_ASSERT(!m_async_fns);
-    KJ_ASSERT(!m_wait_stream);
-    KJ_ASSERT(!m_post_stream);
     KJ_ASSERT(m_num_refs == 0);
 
     // Spin event loop. wait for any promises triggered by RPC shutdown.
@@ -298,37 +285,13 @@ void EventLoop::loop()
         m_async_fns.emplace();
     }
 
-    kj::Own<kj::AsyncIoStream>& wait_stream{m_wait_stream};
-    char buffer = 0;
-    for (;;) {
-        const size_t read_bytes = wait_stream->read(&buffer, 0, 1).wait(m_io_context.waitScope);
-        if (read_bytes != 1) throw std::logic_error("EventLoop wait_stream closed unexpectedly");
-        Lock lock(m_mutex);
-        if (m_sync_fn) {
-            // m_sync_fn throwing is never expected. If it does happen, the caller
-            // of EventLoop::sync() will return without any indication of failure,
-            // which will likely cause other bugs. Log the error and continue.
-            KJ_IF_MAYBE(exception, kj::runCatchingExceptions([&]() MP_REQUIRES(m_mutex) { Unlock(lock, *m_sync_fn); })) {
-                MP_LOG(*this, Log::Error) << "EventLoop: m_sync_fn threw: " << kj::str(*exception).cStr();
-            }
-            m_sync_fn = nullptr;
-            m_cv.notify_all();
-        } else if (done()) {
-            // Intentionally do not break if m_sync_fn was set, even if done()
-            // would return true, to ensure that the sync() m_post_writer->write()
-            // call always succeeds and the loop does not exit between the time
-            // that the done condition is set and the write call is made.
-            break;
-        }
-    }
+    // Block execution here until all references are dropped
+    m_stop_promise_fulfiller_pair.promise.wait(m_io_context.waitScope);
+
     MP_LOG(*this, Log::Info) << "EventLoop::loop done, cancelling event listeners.";
     m_task_set.reset();
     MP_LOG(*this, Log::Info) << "EventLoop::loop bye.";
-    wait_stream = nullptr;
     const Lock lock(m_mutex);
-    m_post_writer = nullptr;
-    m_wait_stream = nullptr;
-    m_post_stream = nullptr;
     m_async_fns.reset();
     m_cv.notify_all();
 }
@@ -339,15 +302,9 @@ void EventLoop::sync(kj::FunctionParam<void()> fn)
         fn();
         return;
     }
-    Lock lock(m_mutex);
-    EventLoopRef ref(*this, &lock);
-    m_cv.wait(lock.m_lock, [this]() MP_REQUIRES(m_mutex) { return m_sync_fn == nullptr; });
-    m_sync_fn = &fn;
-    Unlock(lock, [&] {
-        char buffer = 0;
-        m_post_writer->write(&buffer, 1);
-    });
-    m_cv.wait(lock.m_lock, [this, &fn]() MP_REQUIRES(m_mutex) { return m_sync_fn != &fn; });
+    KJ_IF_MAYBE(exception, kj::runCatchingExceptions([&]() { m_executor.executeSync(fn); })) {
+        MP_LOG(*this, Log::Error) << "EventLoop: m_executor.executeSync threw: " << kj::str(*exception).cStr();
+    }
 }
 
 void EventLoop::startAsyncThread()

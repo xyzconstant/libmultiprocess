@@ -301,18 +301,8 @@ public:
     //! method has not been called.
     std::thread m_async_thread;
 
-    //! Callback function to run on event loop thread during sync() call.
-    kj::FunctionParam<void()>* m_sync_fn MP_GUARDED_BY(m_mutex) = nullptr;
-
     //! Callback functions to run on async thread.
     std::optional<CleanupList> m_async_fns MP_GUARDED_BY(m_mutex);
-
-    //! Socket pair used to post and wait for wakeups to the event loop thread.
-    kj::Own<kj::AsyncIoStream> m_wait_stream;
-    kj::Own<kj::AsyncIoStream> m_post_stream;
-
-    //! Synchronous writer used to write to m_post_stream.
-    kj::Own<kj::OutputStream> m_post_writer;
 
     //! Number of EventLoopRef instances referencing this event loop. This is a
     //! sum of the number of client and server objects (Connection, ProxyClient,
@@ -329,6 +319,12 @@ public:
 
     //! Capnp IO context.
     kj::AsyncIoContext m_io_context;
+
+    //! Allow other threads to schedule calls on KJ's event loop.
+    const kj::Executor& m_executor;
+
+    //! Promise-Fullfiller pair used to exit EventLoop::loop().
+    kj::PromiseCrossThreadFulfillerPair<void> m_stop_promise_fulfiller_pair;
 
     //! Capnp error handler. Needs to outlive m_task_set.
     LoggingErrorHandler m_error_handler{*this};
